@@ -20,7 +20,7 @@ configurar_logging(settings.log_level)
 log = structlog.get_logger()
 
 # Criados uma vez por instância e reaproveitados enquanto ela estiver "quente"
-engine = criar_engine(settings.database_url)
+engine = criar_engine(settings.database_url.get_secret_value())
 dp = criar_dispatcher(settings, criar_sessionmaker(engine))
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)

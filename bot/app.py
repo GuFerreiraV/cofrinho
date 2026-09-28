@@ -4,9 +4,9 @@ import logging
 import sys
 
 import structlog
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram.enums import ChatType, ParseMode
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import Settings
@@ -41,6 +41,10 @@ def criar_bot(settings: Settings) -> Bot:
 
 def criar_dispatcher(settings: Settings, sessionmaker: async_sessionmaker) -> Dispatcher:
     dp = Dispatcher(storage=SqlAlchemyStorage(sessionmaker), settings=settings)
+    # Finanças pessoais: só conversas privadas. Em grupos, chat.id seria compartilhado
+    # por todos os membros; o bot ignora qualquer update que não venha de um chat privado.
+    dp.message.filter(F.chat.type == ChatType.PRIVATE)
+    dp.callback_query.filter(F.message.chat.type == ChatType.PRIVATE)
     dp.update.middleware(DbSessionMiddleware(sessionmaker))
     # Ordem importa: comandos antes do catch-all de texto livre (em gasto.router)
     dp.include_routers(start_ajuda.router, relatorios.router, gasto.router)

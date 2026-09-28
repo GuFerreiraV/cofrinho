@@ -2,6 +2,7 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import Connection
 
@@ -17,11 +18,11 @@ class _DbSettings(BaseSettings):
     """Só a URL do banco: migrations não devem exigir BOT_TOKEN."""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
-    database_url: str = "sqlite+aiosqlite:///./data/financeiro.db"
+    database_url: SecretStr = SecretStr("sqlite+aiosqlite:///./data/financeiro.db")
 
 
 # Não usa config.set_main_option: senhas com "%" quebram a interpolação do configparser
-database_url = _DbSettings().database_url
+database_url = _DbSettings().database_url.get_secret_value()
 target_metadata = Base.metadata
 
 

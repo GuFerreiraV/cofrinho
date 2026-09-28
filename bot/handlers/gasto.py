@@ -50,7 +50,10 @@ DICA_USO = (
 async def _iniciar(
     message: Message, state: FSMContext, session: AsyncSession, parcial: DespesaParcial
 ) -> None:
-    log.debug("gasto_parseado", texto=message.text, parcial=parcial)
+    # Sem texto, valor ou descrição no log: são dados financeiros do usuário
+    faltando = [c for c in ("valor", "forma_pagamento", "data", "descricao")
+                if getattr(parcial, c) is None]  # fmt: skip
+    log.debug("gasto_parseado", campos_faltando=faltando)
     await state.set_data(
         {
             "valor": str(parcial.valor) if parcial.valor is not None else None,
@@ -59,11 +62,17 @@ async def _iniciar(
             "descricao": parcial.descricao,
         }
     )
-    await _avancar(message, state, session)
+    await _avancar(message, state, session, message.from_user.id)
 
 
-async def _avancar(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    """Pergunta o primeiro campo que faltar; com tudo preenchido, categoriza e salva."""
+async def _avancar(
+    message: Message, state: FSMContext, session: AsyncSession, user_id: int
+) -> None:
+    """Pergunta o primeiro campo que faltar; com tudo preenchido, categoriza e salva.
+
+    `user_id` vem sempre de `from_user` (quem enviou a mensagem ou clicou no botão).
+    Em callbacks, `message` é a mensagem *do bot*, então não serve para identificar o dono.
+    """
     dados = await state.get_data()
 
     if not dados.get("valor"):
@@ -101,7 +110,7 @@ async def _avancar(message: Message, state: FSMContext, session: AsyncSession) -
         return
 
     despesa = await DespesaRepository(session).criar(
-        user_id=message.chat.id,
+        user_id=user_id,
         valor=Decimal(dados["valor"]),
         forma_pagamento=dados["forma"],
         data=date.fromisoformat(dados["data"]),
@@ -114,6 +123,13 @@ async def _avancar(message: Message, state: FSMContext, session: AsyncSession) -
 
 
 # ---------------------------------------------------------------- entradas
+
+
+@router.message(F.text.len() > parser_service.MAX_TEXTO)
+async def texto_longo_demais(message: Message) -> None:
+    await message.answer(
+        erro(f"Mensagem longa demais (máximo de {parser_service.MAX_TEXTO} caracteres).")
+    )
 
 
 @router.message(Command("cancelar"))
@@ -144,7 +160,7 @@ async def receber_valor(message: Message, state: FSMContext, session: AsyncSessi
         await message.answer(erro("Valor inválido. Envie só o número, ex: <code>45,90</code>"))
         return
     await state.update_data(valor=str(valor))
-    await _avancar(message, state, session)
+    await _avancar(message, state, session, message.from_user.id)
 
 
 @router.message(RegistroGasto.aguardando_data, F.text, ~F.text.startswith("/"))
@@ -159,7 +175,7 @@ async def receber_data(
         return
     # `data` é também o nome do parâmetro posicional de update_data
     await state.update_data({"data": data.isoformat()})
-    await _avancar(message, state, session)
+    await _avancar(message, state, session, message.from_user.id)
 
 
 @router.message(RegistroGasto.aguardando_forma, F.text, ~F.text.startswith("/"))
@@ -172,7 +188,7 @@ async def receber_forma_texto(message: Message, state: FSMContext, session: Asyn
         )
         return
     await state.update_data(forma=forma)
-    await _avancar(message, state, session)
+    await _avancar(message, state, session, message.from_user.id)
 
 
 @router.callback_query(RegistroGasto.aguardando_forma, FormaCB.filter())
@@ -182,17 +198,22 @@ async def receber_forma_botao(
     await state.update_data(forma=callback_data.forma)
     await callback.answer()
     await callback.message.edit_text(f"💳 Pagamento: <b>{callback_data.forma}</b>")
-    await _avancar(callback.message, state, session)
+    await _avancar(callback.message, state, session, callback.from_user.id)
 
 
 @router.message(RegistroGasto.aguardando_descricao, F.text, ~F.text.startswith("/"))
 async def receber_descricao(message: Message, state: FSMContext, session: AsyncSession) -> None:
     descricao = parser_service.limpar_descricao(message.text)
     if descricao is None:
-        await message.answer(erro("Descreva o gasto em poucas palavras, ex: <i>mercado</i>."))
+        await message.answer(
+            erro(
+                "Descreva o gasto em poucas palavras (até "
+                f"{parser_service.MAX_DESCRICAO} caracteres), ex: <i>mercado</i>."
+            )
+        )
         return
     await state.update_data(descricao=descricao)
-    await _avancar(message, state, session)
+    await _avancar(message, state, session, message.from_user.id)
 
 
 @router.message(RegistroGasto.aguardando_categoria, F.text, ~F.text.startswith("/"))
@@ -206,7 +227,7 @@ async def receber_categoria_texto(
         )
         return
     await state.update_data(categoria=escolhida)
-    await _avancar(message, state, session)
+    await _avancar(message, state, session, message.from_user.id)
 
 
 @router.callback_query(RegistroGasto.aguardando_categoria, CategoriaCB.filter())
@@ -216,14 +237,22 @@ async def receber_categoria_botao(
     await state.update_data(categoria=callback_data.categoria)
     await callback.answer()
     await callback.message.delete()
-    await _avancar(callback.message, state, session)
+    await _avancar(callback.message, state, session, callback.from_user.id)
 
 
 # ---------------------------------------------------------------- correção de categoria
 
 
 @router.callback_query(CorrigirCB.filter())
-async def corrigir_categoria(callback: CallbackQuery, callback_data: CorrigirCB) -> None:
+async def corrigir_categoria(
+    callback: CallbackQuery, callback_data: CorrigirCB, session: AsyncSession
+) -> None:
+    despesa = await DespesaRepository(session).obter(
+        callback_data.despesa_id, callback.from_user.id
+    )
+    if despesa is None:
+        await callback.answer("❌ Gasto não encontrado.", show_alert=True)
+        return
     await callback.answer("Escolha a nova categoria")
     await callback.message.edit_reply_markup(
         reply_markup=teclado_nova_categoria(callback_data.despesa_id)
@@ -235,7 +264,7 @@ async def salvar_nova_categoria(
     callback: CallbackQuery, callback_data: NovaCategoriaCB, session: AsyncSession
 ) -> None:
     despesa = await DespesaRepository(session).atualizar_categoria(
-        callback_data.despesa_id, callback.message.chat.id, callback_data.categoria
+        callback_data.despesa_id, callback.from_user.id, callback_data.categoria
     )
     if despesa is None:
         await callback.answer("❌ Gasto não encontrado.", show_alert=True)

@@ -1,7 +1,9 @@
+import ssl
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import certifi
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -31,7 +33,9 @@ def preparar_url(database_url: str) -> tuple[URL, dict[str, Any]]:
         "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",
     }
     if sslmode and sslmode != "disable":
-        connect_args["ssl"] = "require"
+        # ssl="require" no asyncpg (como no libpq) só cifra: não verifica certificado nem host.
+        # O contexto padrão exige CA confiável (bundle do certifi) e hostname correto.
+        connect_args["ssl"] = ssl.create_default_context(cafile=certifi.where())
     return url, connect_args
 
 

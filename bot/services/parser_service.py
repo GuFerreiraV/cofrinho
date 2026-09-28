@@ -6,6 +6,8 @@ from decimal import Decimal, InvalidOperation
 import dateparser
 
 VALOR_MAXIMO = Decimal("99999999.99")  # limite de Numeric(10, 2)
+MAX_TEXTO = 300  # mensagens maiores são recusadas antes do parse
+MAX_DESCRICAO = 100
 
 FORMAS_PAGAMENTO = ("Pix", "Débito", "Crédito", "Dinheiro")
 
@@ -145,7 +147,10 @@ def _extrair_forma(texto: str) -> tuple[str, str | None]:
 
 
 def limpar_descricao(texto: str) -> str | None:
-    """Colapsa espaços e remove stopwords das pontas ("no mercado com" → "mercado")."""
+    """Colapsa espaços e remove stopwords das pontas ("no mercado com" → "mercado").
+
+    Retorna None se não sobrar nada ou se passar de MAX_DESCRICAO caracteres.
+    """
     palavras = [p.strip(",.;:!?-") for p in texto.split()]
     palavras = [p for p in palavras if p]
     while palavras and palavras[0].lower() in _STOPWORDS:
@@ -155,6 +160,8 @@ def limpar_descricao(texto: str) -> str | None:
     if not palavras:
         return None
     descricao = " ".join(palavras)
+    if len(descricao) > MAX_DESCRICAO:
+        return None
     return descricao[0].upper() + descricao[1:]
 
 

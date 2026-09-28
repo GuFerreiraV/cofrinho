@@ -58,3 +58,37 @@ async def test_limpar_chave_inexistente_nao_cria_linha(storage, session):
     await storage.set_state(CHAVE, None)
     await storage.set_data(CHAVE, {})
     assert await _linhas(session) == 0
+
+
+async def _envelhecer(session, horas: int) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import update
+
+    await session.execute(
+        update(FsmEstado).values(atualizado_em=datetime.now(UTC) - timedelta(hours=horas))
+    )
+    await session.commit()
+
+
+async def test_estado_expirado_e_descartado(storage, session):
+    await storage.set_state(CHAVE, RegistroGasto.aguardando_forma)
+    await storage.set_data(CHAVE, {"valor": "45.00"})
+    await _envelhecer(session, horas=25)
+    assert await storage.get_state(CHAVE) is None
+    assert await storage.get_data(CHAVE) == {}
+    assert await _linhas(session) == 0
+
+
+async def test_estado_recente_nao_expira(storage, session):
+    await storage.set_state(CHAVE, RegistroGasto.aguardando_forma)
+    await _envelhecer(session, horas=23)
+    assert await storage.get_state(CHAVE) == RegistroGasto.aguardando_forma.state
+
+
+async def test_conversa_nova_limpa_as_abandonadas(storage, session):
+    await storage.set_state(OUTRA_CHAVE, RegistroGasto.aguardando_valor)
+    await _envelhecer(session, horas=48)
+    await storage.set_state(CHAVE, RegistroGasto.aguardando_valor)
+    chaves = list(await session.scalars(select(FsmEstado.chave)))
+    assert len(chaves) == 1 and ":42:" in chaves[0]

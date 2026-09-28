@@ -6,7 +6,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     bot_token: SecretStr
-    database_url: str = "sqlite+aiosqlite:///./data/financeiro.db"
+    # SecretStr: a URL do Neon contém a senha do banco e não pode aparecer em logs/repr
+    database_url: SecretStr = SecretStr("sqlite+aiosqlite:///./data/financeiro.db")
     timezone: str = "America/Sao_Paulo"
     log_level: str = "INFO"
     # Produção (Vercel): URL pública do endpoint e segredo enviado pelo Telegram em cada update

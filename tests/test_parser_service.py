@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from bot.services.parser_service import (
+    MAX_DESCRICAO,
     limpar_descricao,
     parse,
     parse_data,
@@ -133,6 +134,11 @@ def test_parse_forma_pagamento():
 def test_parse_data_avulsa():
     assert parse_data("ontem", HOJE) == date(2026, 9, 25)
     assert parse_data("qualquer coisa", HOJE) is None
+
+
+def test_descricao_acima_do_limite_vira_none():
+    assert limpar_descricao("a" * MAX_DESCRICAO) == "A" + "a" * (MAX_DESCRICAO - 1)
+    assert limpar_descricao("a" * (MAX_DESCRICAO + 1)) is None
 
 
 def test_limpar_descricao():

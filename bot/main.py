@@ -15,9 +15,9 @@ log = structlog.get_logger()
 async def main() -> None:
     settings = get_settings()
     configurar_logging(settings.log_level)
-    garantir_diretorio_sqlite(settings.database_url)
+    garantir_diretorio_sqlite(settings.database_url.get_secret_value())
 
-    engine = criar_engine(settings.database_url)
+    engine = criar_engine(settings.database_url.get_secret_value())
     bot = criar_bot(settings)
     dp = criar_dispatcher(settings, criar_sessionmaker(engine))
 

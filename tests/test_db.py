@@ -1,3 +1,5 @@
+import ssl
+
 from bot.db import preparar_url
 
 
@@ -8,7 +10,10 @@ def test_url_do_neon_vira_asyncpg_com_ssl():
     assert url.drivername == "postgresql+asyncpg"
     assert "sslmode" not in url.query and "channel_binding" not in url.query
     assert url.password == "s"
-    assert args["ssl"] == "require"
+    contexto = args["ssl"]
+    assert isinstance(contexto, ssl.SSLContext)
+    assert contexto.verify_mode == ssl.CERT_REQUIRED
+    assert contexto.check_hostname
     assert args["statement_cache_size"] == 0
 
 

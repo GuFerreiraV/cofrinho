@@ -18,23 +18,23 @@ def _servico(session: AsyncSession, settings: Settings) -> RelatorioService:
 
 @router.message(Command("diario"))
 async def diario(message: Message, session: AsyncSession, settings: Settings) -> None:
-    titulo, totais = await _servico(session, settings).diario(message.chat.id)
+    titulo, totais = await _servico(session, settings).diario(message.from_user.id)
     await message.answer(formatar_relatorio(titulo, totais))
 
 
 @router.message(Command("semanal"))
 async def semanal(message: Message, session: AsyncSession, settings: Settings) -> None:
-    titulo, totais = await _servico(session, settings).semanal(message.chat.id)
+    titulo, totais = await _servico(session, settings).semanal(message.from_user.id)
     await message.answer(formatar_relatorio(titulo, totais))
 
 
 @router.message(Command("mensal"))
 async def mensal(message: Message, session: AsyncSession, settings: Settings) -> None:
-    titulo, totais = await _servico(session, settings).mensal(message.chat.id)
+    titulo, totais = await _servico(session, settings).mensal(message.from_user.id)
     await message.answer(formatar_relatorio(titulo, totais))
 
 
 @router.message(Command("geral"))
 async def geral(message: Message, session: AsyncSession, settings: Settings) -> None:
-    titulo, totais = await _servico(session, settings).geral(message.chat.id)
+    titulo, totais = await _servico(session, settings).geral(message.from_user.id)
     await message.answer(formatar_relatorio(titulo, totais))

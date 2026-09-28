@@ -1,11 +1,10 @@
-import importlib.util
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-SECRET = "segredo-de-teste"
+from tests.conftest import WEBHOOK_SECRET as SECRET
+
 UPDATE = {
     "update_id": 1,
     "message": {
@@ -18,25 +17,11 @@ UPDATE = {
 }
 
 
-@pytest.fixture(scope="module")
-def _modulo(tmp_path_factory):
-    # Carregado uma vez: os routers do aiogram só podem entrar em um Dispatcher
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("BOT_TOKEN", "123:abc")
-        mp.setenv("WEBHOOK_SECRET", SECRET)
-        mp.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path_factory.mktemp('db')}/t.db")
-        caminho = Path(__file__).resolve().parent.parent / "api" / "webhook.py"
-        spec = importlib.util.spec_from_file_location("api_webhook", caminho)
-        modulo = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(modulo)
-    return modulo
-
-
 @pytest.fixture
-def webhook(_modulo, monkeypatch):
+def webhook(api_webhook, monkeypatch):
     # O dispatcher real não é chamado: só verificamos o que o endpoint repassa a ele
-    monkeypatch.setattr(_modulo.dp, "feed_update", AsyncMock())
-    return _modulo
+    monkeypatch.setattr(api_webhook.dp, "feed_update", AsyncMock())
+    return api_webhook
 
 
 def _post(modulo, secret):
