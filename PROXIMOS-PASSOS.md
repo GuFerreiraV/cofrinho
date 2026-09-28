@@ -10,9 +10,9 @@ O passo a passo técnico completo está no [README](README.md#deploy-vercel--neo
 ## ✅ Checklist
 
 ### 1. GitHub
-- [ ] Criar um repositório **privado** e vazio em github.com/new (ex: `chatbot-financeiro`)
-- [ ] Conferir que `.env` e `data/` **não** estão no commit: `git status --ignored`
-- [ ] Enviar o código:
+- [X] Criar um repositório **privado** e vazio em github.com/new (ex: `chatbot-financeiro`)
+- [X] Conferir que `.env` e `data/` **não** estão no commit: `git status --ignored`
+- [X] Enviar o código:
   ```fish
   git remote add origin git@github.com:<seu-usuario>/chatbot-financeiro.git
   git push -u origin main
@@ -21,8 +21,8 @@ O passo a passo técnico completo está no [README](README.md#deploy-vercel--neo
 > Se o `BOT_TOKEN` algum dia for commitado, revogue-o no @BotFather (`/revoke`), porque apagar o commit não basta.
 
 ### 2. Neon (banco)
-- [ ] Criar a conta em console.neon.tech (login com o GitHub)
-- [ ] Criar o projeto na região **São Paulo** (ou na mais próxima)
+- [X] Criar a conta em console.neon.tech (login com o GitHub)
+- [X] Criar o projeto na região **São Paulo** (ou na mais próxima)
 - [ ] Copiar a connection string **pooled** (o host contém `-pooler`)
 - [ ] Criar as tabelas: `env DATABASE_URL="<string do neon>" alembic upgrade head`
 
