@@ -1,0 +1,10 @@
+.venv/
+.env
+data/
+tests/
+alembic/
+alembic.ini
+scripts/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/

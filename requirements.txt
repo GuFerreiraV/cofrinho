@@ -1,0 +1,9 @@
+# Dependências de produção (usadas pela Vercel). Desenvolvimento: pip install -e ".[dev]"
+aiogram==3.31.0
+SQLAlchemy==2.1.1
+aiosqlite==0.22.1
+asyncpg==0.31.0
+dateparser==1.4.3
+pydantic-settings==2.15.0
+structlog==26.1.0
+fastapi==0.141.1
