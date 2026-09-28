@@ -1,4 +1,4 @@
-# 💸 Chatbot Financeiro (Telegram)
+# Chatbot Financeiro (Telegram)
 
 Bot de Telegram para registrar despesas pessoais pelo chat, categorizá-las automaticamente e consultar relatórios em R$.
 
