@@ -29,7 +29,7 @@ AJUDA = (
     "<b>Outros</b>\n"
     "🚫 /cancelar — cancela um registro em andamento\n"
     "📈 /dashboard — painel web (em breve)\n\n"
-    "💳 Formas de pagamento: Pix, Débito, Crédito, Dinheiro\n"
+    "💳 Formas de pagamento: Pix, Débito, Crédito, Dinheiro, Voucher (VR/VA)\n"
     "📅 Datas: hoje, ontem, anteontem, 05/09, dia 5, 5 de setembro"
 )
 

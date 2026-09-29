@@ -28,3 +28,10 @@ def test_formatar_relatorio_alinha_valores():
     corpo = texto.split("<pre>")[1].removesuffix("</pre>")
     linhas = [linha for linha in corpo.splitlines() if "R$" in linha]
     assert len({len(linha) for linha in linhas}) == 1
+
+
+def test_toda_forma_de_pagamento_tem_icone():
+    from bot.services.formatador_service import ICONES_PAGAMENTO
+    from bot.services.parser_service import FORMAS_PAGAMENTO
+
+    assert set(FORMAS_PAGAMENTO) <= set(ICONES_PAGAMENTO)

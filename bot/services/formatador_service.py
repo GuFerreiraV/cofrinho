@@ -10,7 +10,13 @@ MESES = (
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 )  # fmt: skip
 
-ICONES_PAGAMENTO = {"Pix": "⚡", "Débito": "💳", "Crédito": "💳", "Dinheiro": "💵"}
+ICONES_PAGAMENTO = {
+    "Pix": "⚡",
+    "Débito": "💳",
+    "Crédito": "💳",
+    "Dinheiro": "💵",
+    "Voucher": "🎟️",
+}
 
 
 def formatar_brl(valor: Decimal) -> str:

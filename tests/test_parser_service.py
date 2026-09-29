@@ -144,3 +144,28 @@ def test_descricao_acima_do_limite_vira_none():
 def test_limpar_descricao():
     assert limpar_descricao("  no mercado com  ") == "Mercado"
     assert limpar_descricao("com o") is None
+
+
+@pytest.mark.parametrize(
+    "texto",
+    ["voucher", "Voucher", "VR", "va", "vale refeição", "vale-alimentação", "cartão voucher"],
+)
+def test_sinonimos_de_voucher(texto):
+    assert parse_forma_pagamento(texto) == "Voucher"
+
+
+def test_voucher_em_frase():
+    p = parse("35 no restaurante com o vale refeição", HOJE)
+    assert p.forma_pagamento == "Voucher"
+    assert p.descricao == "Restaurante"
+
+
+def test_cartao_voucher_nao_vira_credito_nem_sobra_na_descricao():
+    p = parse("40 almoço cartão voucher", HOJE)
+    assert p.forma_pagamento == "Voucher"
+    assert p.descricao == "Almoço"
+
+
+def test_palavra_com_va_no_meio_nao_vira_voucher():
+    assert parse_forma_pagamento("vaso") is None
+    assert parse_forma_pagamento("uva") is None

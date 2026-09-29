@@ -9,10 +9,16 @@ VALOR_MAXIMO = Decimal("99999999.99")  # limite de Numeric(10, 2)
 MAX_TEXTO = 300  # mensagens maiores são recusadas antes do parse
 MAX_DESCRICAO = 100
 
-FORMAS_PAGAMENTO = ("Pix", "Débito", "Crédito", "Dinheiro")
+FORMAS_PAGAMENTO = ("Pix", "Débito", "Crédito", "Dinheiro", "Voucher")
 
-# Padrões mais longos primeiro, para "cartão de crédito" vencer "cartão"
+# Padrões mais longos/específicos primeiro: "cartão de crédito" e "cartão voucher" vencem "cartão"
 _SINONIMOS_PAGAMENTO: list[tuple[str, str]] = [
+    (r"cart[aã]o\s+(?:voucher|vr|va)", "Voucher"),
+    (r"vale[\s-]*refei[cç][aã]o", "Voucher"),
+    (r"vale[\s-]*alimenta[cç][aã]o", "Voucher"),
+    (r"voucher", "Voucher"),
+    (r"vr", "Voucher"),
+    (r"va", "Voucher"),
     (r"cart[aã]o\s+de\s+d[eé]bito", "Débito"),
     (r"cart[aã]o\s+de\s+cr[eé]dito", "Crédito"),
     (r"d[eé]bito", "Débito"),
