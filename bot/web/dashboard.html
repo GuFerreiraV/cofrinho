@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dashboard de gastos</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+<style>
+  /* Tokens: cores do tema do Telegram (injetadas pelo telegram-web-app.js), com fallback */
+  :root {
+    color-scheme: light;
+    --bg: var(--tg-theme-secondary-bg-color, #f1f1f4);
+    --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #ffffff));
+    --text: var(--tg-theme-text-color, #0b0b0b);
+    --muted: var(--tg-theme-hint-color, #6d6d72);
+    --accent: var(--tg-theme-button-color, #2a78d6);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --line: color-mix(in srgb, var(--muted) 22%, transparent);
+    /* Paleta categórica validada (ordem fixa: a cor segue a categoria, nunca o ranking) */
+    --s0: #2a78d6; --s1: #eb6834; --s2: #1baf7a; --s3: #eda100; --s4: #e87ba4;
+    --s5: #008300; --s6: #4a3aa7; --s7: #e34948;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: var(--tg-theme-secondary-bg-color, #111112);
+    --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #1c1c1d));
+    --text: var(--tg-theme-text-color, #ffffff);
+    --muted: var(--tg-theme-hint-color, #a2a2a8);
+    --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500; --s4: #d55181;
+    --s5: #008300; --s6: #9085e9; --s7: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 12px 12px calc(24px + env(safe-area-inset-bottom, 0px));
+    display: grid;
+    gap: 12px;
+  }
+  h1 { font-size: 20px; margin: 4px 4px 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 4px; }
+  .card { background: var(--card); border-radius: 14px; padding: 14px; }
+
+  /* Filtros: uma linha acima dos gráficos */
+  .filtros { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .segmentos {
+    display: flex; flex: 1 1 220px;
+    background: var(--card); border-radius: 10px; padding: 3px;
+  }
+  .segmentos button {
+    flex: 1; border: 0; background: transparent; color: var(--text);
+    font: inherit; font-size: 14px; padding: 8px 4px; border-radius: 8px; cursor: pointer;
+    min-height: 36px;
+  }
+  .segmentos button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+  select {
+    flex: 1 1 140px; min-height: 42px; font: inherit; font-size: 14px;
+    color: var(--text); background: var(--card); border: 0; border-radius: 10px; padding: 0 10px;
+  }
+
+  .total { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .total strong { font-size: 28px; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+  .total span { color: var(--muted); font-size: 13px; }
+
+  .grafico { position: relative; height: 220px; }
+  .pizza { height: 200px; }
+
+  /* Legenda da pizza = tabela de valores (identidade nunca só pela cor) */
+  .legenda { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 2px; }
+  .legenda li {
+    display: grid; grid-template-columns: 12px 1fr auto 44px; gap: 8px; align-items: center;
+    padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px;
+  }
+  .legenda li:first-child { border-top: 0; }
+  .ponto { width: 10px; height: 10px; border-radius: 50%; }
+  .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .pct { color: var(--muted); font-size: 13px; }
+
+  .maiores { list-style: none; margin: 0; padding: 0; }
+  .maiores li {
+    display: grid; grid-template-columns: 1fr auto; gap: 2px 8px;
+    padding: 9px 0; border-top: 1px solid var(--line);
+  }
+  .maiores li:first-child { border-top: 0; }
+  .maiores .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .maiores .meta { color: var(--muted); font-size: 12px; grid-column: 1; }
+  .maiores .num { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-weight: 600; }
+
+  .aviso { text-align: center; color: var(--muted); padding: 32px 16px; }
+  .aviso strong { display: block; color: var(--text); font-size: 16px; margin-bottom: 4px; }
+  .carregando main > :not(.cabecalho):not(.filtros) { opacity: .45; transition: opacity .15s; }
+</style>
+</head>
+<body>
+<main>
+  <header class="cabecalho">
+    <h1>Meus gastos</h1>
+    <p class="sub" id="rotulo-periodo">&nbsp;</p>
+  </header>
+
+  <div class="filtros" role="group" aria-label="Filtros">
+    <div class="segmentos" role="group" aria-label="Período">
+      <button type="button" data-periodo="mes" aria-pressed="true">Este mês</button>
+      <button type="button" data-periodo="3m" aria-pressed="false">3 meses</button>
+      <button type="button" data-periodo="tudo" aria-pressed="false">Tudo</button>
+    </div>
+    <select id="categoria" aria-label="Categoria">
+      <option value="">Todas as categorias</option>
+      <option value="Lazer">🎮 Lazer</option>
+      <option value="Estudos">📚 Estudos</option>
+      <option value="Comida">🍔 Comida</option>
+      <option value="Investimentos">📈 Investimentos</option>
+      <option value="Outros">📦 Outros</option>
+    </select>
+  </div>
+
+  <div id="aviso" class="card aviso" hidden></div>
+
+  <section id="conteudo" hidden>
+    <div style="display:grid; gap:12px">
+      <div class="card total">
+        <div>
+          <div class="sub" style="margin:0">Total no período</div>
+          <strong id="total">R$ 0,00</strong>
+        </div>
+        <span id="quantidade"></span>
+      </div>
+
+      <div class="card">
+        <h2 id="titulo-pizza">Por categoria</h2>
+        <div class="grafico pizza"><canvas id="pizza" aria-label="Gráfico de pizza"></canvas></div>
+        <ul class="legenda" id="legenda"></ul>
+      </div>
+
+      <div class="card">
+        <h2 id="titulo-barras">Últimos 6 meses</h2>
+        <div class="grafico"><canvas id="barras" aria-label="Gráfico de barras por mês"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h2>Maiores gastos</h2>
+        <ul class="maiores" id="maiores"></ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const estado = { periodo: "mes", categoria: "" };
+  const CATEGORIAS = ["Lazer", "Estudos", "Comida", "Investimentos", "Outros"];
+  const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+  const brlCurto = new Intl.NumberFormat("pt-BR", {
+    style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1,
+  });
+  const $ = (id) => document.getElementById(id);
+  let graficoPizza = null;
+  let graficoBarras = null;
+  let ultimo = null;
+
+  // telegram-web-app.js define Telegram.WebApp até fora do Telegram (sem initData
+  // e com colorScheme "light"); nesse caso vale o tema do sistema.
+  if (tg && tg.initData) {
+    tg.ready();
+    tg.expand();
+    document.documentElement.dataset.theme = tg.colorScheme === "dark" ? "dark" : "light";
+    tg.onEvent("themeChanged", () => {
+      document.documentElement.dataset.theme = tg.colorScheme === "dark" ? "dark" : "light";
+      if (ultimo) desenhar(ultimo);
+    });
+  } else if (matchMedia("(prefers-color-scheme: dark)").matches) {
+    document.documentElement.dataset.theme = "dark";
+  }
+
+  const css = (nome) => getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+  const corSlot = (slot) => css(`--s${slot % 8}`);
+
+  function aviso(titulo, texto) {
+    const el = $("aviso");
+    el.replaceChildren();
+    const forte = document.createElement("strong");
+    forte.textContent = titulo;
+    el.append(forte, document.createTextNode(texto));
+    el.hidden = false;
+    $("conteudo").hidden = true;
+  }
+
+  async function carregar() {
+    document.body.classList.add("carregando");
+    try {
+      const resposta = await fetch(location.pathname, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          initData: tg ? tg.initData : "",
+          periodo: estado.periodo,
+          categoria: estado.categoria || null,
+        }),
+      });
+      if (resposta.status === 401) {
+        aviso("Abra pelo Telegram", "Use o comando /dashboard no chat do bot.");
+        return;
+      }
+      if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+      ultimo = await resposta.json();
+      desenhar(ultimo);
+    } catch (erro) {
+      aviso("Não foi possível carregar", "Verifique sua conexão e tente de novo.");
+    } finally {
+      document.body.classList.remove("carregando");
+    }
+  }
+
+  function desenhar(d) {
+    $("rotulo-periodo").textContent =
+      d.periodo.rotulo + (d.categoria ? ` · ${d.categoria}` : "");
+    if (d.quantidade === 0) {
+      aviso("Nenhum gasto no período", "Registre um gasto no chat do bot e volte aqui.");
+      return;
+    }
+    $("aviso").hidden = true;
+    $("conteudo").hidden = false;
+    $("total").textContent = d.total_fmt;
+    $("quantidade").textContent = d.quantidade === 1 ? "1 gasto" : `${d.quantidade} gastos`;
+    desenharPizza(d.pizza);
+    desenharBarras(d.barras, d.categoria);
+    desenharMaiores(d.maiores);
+  }
+
+  function desenharPizza(pizza) {
+    $("titulo-pizza").textContent = pizza.titulo;
+    const cores = pizza.itens.map((i) => corSlot(i.slot));
+    const total = pizza.itens.reduce((s, i) => s + i.valor, 0);
+    if (graficoPizza) graficoPizza.destroy();
+    graficoPizza = new Chart($("pizza"), {
+      type: "pie",
+      data: {
+        labels: pizza.itens.map((i) => i.rotulo),
+        datasets: [{
+          data: pizza.itens.map((i) => i.valor),
+          backgroundColor: cores,
+          borderColor: css("--card") || "#fff",
+          borderWidth: 2,
+          hoverOffset: 6,
+        }],
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const item = pizza.itens[ctx.dataIndex];
+                return ` ${item.valor_fmt} (${Math.round((item.valor / total) * 100)}%)`;
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const lista = $("legenda");
+    lista.replaceChildren();
+    pizza.itens.forEach((item, i) => {
+      const li = document.createElement("li");
+      const ponto = document.createElement("span");
+      ponto.className = "ponto";
+      ponto.style.background = cores[i];
+      const nome = document.createElement("span");
+      nome.textContent = `${item.icone} ${item.rotulo}`;
+      const valor = document.createElement("span");
+      valor.className = "num";
+      valor.textContent = item.valor_fmt;
+      const pct = document.createElement("span");
+      pct.className = "num pct";
+      pct.textContent = `${Math.round((item.valor / total) * 100)}%`;
+      li.append(ponto, nome, valor, pct);
+      lista.append(li);
+    });
+  }
+
+  function desenharBarras(barras, categoria) {
+    $("titulo-barras").textContent = barras.titulo;
+    // Série única: cor da categoria filtrada, ou a primeira cor da paleta
+    const slot = categoria ? CATEGORIAS.indexOf(categoria) : 0;
+    const texto = css("--muted") || "#6d6d72";
+    const linha = css("--line") || "rgba(0,0,0,.1)";
+    if (graficoBarras) graficoBarras.destroy();
+    graficoBarras = new Chart($("barras"), {
+      type: "bar",
+      data: {
+        labels: barras.itens.map((i) => i.rotulo),
+        datasets: [{
+          data: barras.itens.map((i) => i.valor),
+          backgroundColor: corSlot(Math.max(slot, 0)),
+          borderRadius: { topLeft: 4, topRight: 4 },
+          borderSkipped: "bottom",
+          maxBarThickness: 32,
+        }],
+      },
+      options: {
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: texto }, border: { color: linha } },
+          y: {
+            beginAtZero: true,
+            grid: { color: linha },
+            border: { display: false },
+            ticks: { color: texto, maxTicksLimit: 5, callback: (v) => brlCurto.format(v) },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: { label: (ctx) => ` ${barras.itens[ctx.dataIndex].valor_fmt}` },
+          },
+        },
+      },
+    });
+  }
+
+  function desenharMaiores(maiores) {
+    const lista = $("maiores");
+    lista.replaceChildren();
+    maiores.forEach((m) => {
+      const li = document.createElement("li");
+      const desc = document.createElement("span");
+      desc.className = "desc";
+      desc.textContent = `${m.icone} ${m.descricao}`;
+      const valor = document.createElement("span");
+      valor.className = "num";
+      valor.textContent = m.valor_fmt;
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = `${m.data} · ${m.forma_pagamento}`;
+      li.append(desc, valor, meta);
+      lista.append(li);
+    });
+  }
+
+  document.querySelectorAll("[data-periodo]").forEach((botao) => {
+    botao.addEventListener("click", () => {
+      estado.periodo = botao.dataset.periodo;
+      document.querySelectorAll("[data-periodo]").forEach((b) =>
+        b.setAttribute("aria-pressed", String(b === botao)));
+      carregar();
+    });
+  });
+  $("categoria").addEventListener("change", (e) => {
+    estado.categoria = e.target.value;
+    carregar();
+  });
+
+  if (!window.Chart) {
+    aviso("Não foi possível carregar", "Os gráficos não carregaram. Tente abrir de novo.");
+  } else {
+    carregar();
+  }
+})();
+</script>
+</body>
+</html>

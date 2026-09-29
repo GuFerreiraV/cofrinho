@@ -36,6 +36,7 @@ def api_webhook(tmp_path_factory):
         mp.setenv("BOT_TOKEN", "123:abc")
         mp.setenv("WEBHOOK_SECRET", WEBHOOK_SECRET)
         mp.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path_factory.mktemp('db')}/t.db")
+        mp.chdir(tmp_path_factory.mktemp("sem_env"))  # não lê o .env do desenvolvedor
         caminho = Path(__file__).resolve().parent.parent / "api" / "webhook.py"
         spec = importlib.util.spec_from_file_location("api_webhook", caminho)
         modulo = importlib.util.module_from_spec(spec)

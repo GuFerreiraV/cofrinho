@@ -1,6 +1,15 @@
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import BotCommand, Message
+from aiogram.types import (
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    WebAppInfo,
+)
+
+from bot.config import Settings
+from bot.web.auth import url_dashboard
 
 router = Router(name="start_ajuda")
 
@@ -11,7 +20,7 @@ COMANDOS = [
     BotCommand(command="mensal", description="Gastos do mês"),
     BotCommand(command="geral", description="Gastos de todo o histórico"),
     BotCommand(command="cancelar", description="Cancelar o registro em andamento"),
-    BotCommand(command="dashboard", description="Painel web (em breve)"),
+    BotCommand(command="dashboard", description="Painel com gráficos dos gastos"),
     BotCommand(command="ajuda", description="Lista de comandos"),
 ]
 
@@ -29,7 +38,7 @@ AJUDA = (
     "🏦 /geral — todo o histórico\n\n"
     "<b>Outros</b>\n"
     "🚫 /cancelar — cancela um registro em andamento\n"
-    "📈 /dashboard — painel web (em breve)\n\n"
+    "📈 /dashboard — painel com gráficos dos seus gastos\n\n"
     "💳 Formas de pagamento: Pix, Débito, Crédito, Dinheiro, Voucher (VR/VA)\n"
     "📅 Datas: hoje, ontem, anteontem, 05/09, dia 5, 5 de setembro"
 )
@@ -46,5 +55,13 @@ async def ajuda(message: Message) -> None:
 
 
 @router.message(Command("dashboard"))
-async def dashboard(message: Message) -> None:
-    await message.answer("🚧 O dashboard web está em construção. Em breve!")
+async def dashboard(message: Message, settings: Settings) -> None:
+    url = url_dashboard(settings)
+    if url is None:
+        await message.answer("🚧 O dashboard não está configurado neste ambiente.")
+        return
+    botao = InlineKeyboardButton(text="📊 Abrir dashboard", web_app=WebAppInfo(url=url))
+    await message.answer(
+        "📊 <b>Seu painel de gastos</b>\nVeja onde você mais gasta, por período e categoria.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[botao]]),
+    )

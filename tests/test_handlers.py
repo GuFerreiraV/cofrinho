@@ -271,3 +271,20 @@ async def test_gastos_demais_numa_mensagem(dp, bot, telegram, session):
     await mensagem(dp, bot, ", ".join(f"{v} pix mercado" for v in range(1, 8)))
     assert "até 5 gastos" in telegram.textos()[-1]
     assert await despesas(session) == []
+
+
+# ---------------------------------------------------------------- dashboard
+
+
+async def test_dashboard_envia_botao_do_mini_app(dp, bot, telegram, monkeypatch):
+    monkeypatch.setenv("VERCEL_PROJECT_PRODUCTION_URL", "bot.vercel.app")
+    await mensagem(dp, bot, "/dashboard")
+    teclado = telegram.chamadas[-1].reply_markup
+    botao = teclado.inline_keyboard[0][0]
+    assert botao.web_app.url == "https://bot.vercel.app/api/dashboard"
+
+
+async def test_dashboard_sem_url_configurada(dp, bot, telegram, monkeypatch):
+    monkeypatch.delenv("VERCEL_PROJECT_PRODUCTION_URL", raising=False)
+    await mensagem(dp, bot, "/dashboard")
+    assert "não está configurado" in telegram.textos()[-1]

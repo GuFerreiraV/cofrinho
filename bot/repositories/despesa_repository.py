@@ -50,6 +50,22 @@ class DespesaRepository:
         await self.session.commit()
         return despesa
 
+    async def listar(
+        self,
+        user_id: int,
+        inicio: date | None = None,
+        fim: date | None = None,
+        categoria: str | None = None,
+    ) -> list[Despesa]:
+        stmt = select(Despesa).where(Despesa.user_id == user_id).order_by(Despesa.data)
+        if inicio is not None:
+            stmt = stmt.where(Despesa.data >= inicio)
+        if fim is not None:
+            stmt = stmt.where(Despesa.data <= fim)
+        if categoria is not None:
+            stmt = stmt.where(Despesa.categoria == categoria)
+        return list(await self.session.scalars(stmt))
+
     async def totais_por_categoria(
         self, user_id: int, inicio: date | None = None, fim: date | None = None
     ) -> dict[str, Decimal]:

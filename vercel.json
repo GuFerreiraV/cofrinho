@@ -3,6 +3,10 @@
   "functions": {
     "api/webhook.py": {
       "maxDuration": 30
+    },
+    "api/dashboard.py": {
+      "maxDuration": 15,
+      "includeFiles": "bot/web/dashboard.html"
     }
   }
 }

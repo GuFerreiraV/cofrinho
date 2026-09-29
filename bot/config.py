@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     # Produção (Vercel): URL pública do endpoint e segredo enviado pelo Telegram em cada update
     webhook_url: str | None = None
     webhook_secret: SecretStr | None = None
+    # Dashboard (Mini App). Sem DASHBOARD_URL, usa o domínio de produção da Vercel
+    dashboard_url: str | None = None
+    # Só desenvolvimento local: abre o dashboard no navegador como este usuário,
+    # sem initData do Telegram. Ignorado quando roda na Vercel.
+    dashboard_dev_user_id: int | None = None
 
 
 def get_settings() -> Settings:
