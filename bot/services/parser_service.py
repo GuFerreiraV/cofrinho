@@ -8,6 +8,7 @@ import dateparser
 VALOR_MAXIMO = Decimal("99999999.99")  # limite de Numeric(10, 2)
 MAX_TEXTO = 300  # mensagens maiores são recusadas antes do parse
 MAX_DESCRICAO = 100
+MAX_GASTOS = 5  # gastos numa mesma mensagem
 
 FORMAS_PAGAMENTO = ("Pix", "Débito", "Crédito", "Dinheiro", "Voucher")
 
@@ -49,11 +50,20 @@ _RE_VALOR = re.compile(
     re.IGNORECASE,
 )
 
+_RE_MOEDA = re.compile(r"r\$|reais|real|contos?", re.IGNORECASE)
+
 _STOPWORDS = {
     "gastei", "gasto", "paguei", "comprei", "reais", "real",
     "no", "na", "nos", "nas", "com", "em", "de", "do", "da", "o", "a", "os", "as",
     "pelo", "pela", "por", "pra", "para", "um", "uma", "e", "via", "r$",
+    "usando", "pagando", "utilizando", "pago", "ambos", "ambas", "tudo", "todos",
 }  # fmt: skip
+
+# Conectores que separam gastos numa mesma mensagem: ", " ";" " e " " mais " " também ".
+# Casa só o núcleo (sem os espaços em volta): no texto mascarado, espaços podem
+# ocupar o lugar de uma data ("mercado ontem, 20...") que não pode ser descartada.
+_RE_CONECTOR = re.compile(r"[,](?=\s)|;|(?<=\s)(?:e|mais|tamb[eé]m)(?=\s)", re.IGNORECASE)
+_RES_DATA = (_RE_DATA_RELATIVA, _RE_DATA_BARRA, _RE_DATA_EXTENSO, _RE_DATA_DIA)
 
 
 @dataclass
@@ -62,6 +72,7 @@ class DespesaParcial:
     forma_pagamento: str | None = None
     data: date | None = None  # None só quando a data informada é inválida
     descricao: str | None = None
+    data_informada: bool = False  # False: a data é o padrão (hoje), não veio do texto
 
 
 def _remover(texto: str, match: re.Match) -> str:
@@ -135,9 +146,14 @@ def _converter_valor(bruto: str) -> Decimal | None:
 
 
 def _extrair_valor(texto: str) -> tuple[str, Decimal | None]:
-    m = _RE_VALOR.search(texto)
-    if m is None:
+    """Primeiro número com "R$" ou "reais"; sem nenhum marcado, o primeiro número.
+
+    Ex: "comprei 2 pães por 10 reais" → 10 (e "2 pães" fica na descrição).
+    """
+    matches = list(_RE_VALOR.finditer(texto))
+    if not matches:
         return texto, None
+    m = next((m for m in matches if _RE_MOEDA.search(m.group(0))), matches[0])
     return _remover(texto, m), _converter_valor(m.group(1))
 
 
@@ -172,14 +188,81 @@ def limpar_descricao(texto: str) -> str | None:
 
 
 def parse(texto: str, hoje: date) -> DespesaParcial:
+    """Interpreta um único gasto. Campos não encontrados ficam None (data: hoje)."""
     descricao_aspas = None
     if m := _RE_ASPAS.search(texto):
         descricao_aspas = m.group(1).strip() or None
         texto = _remover(texto, m)
 
-    texto, data = _extrair_data(texto, hoje)
-    texto, valor = _extrair_valor(texto)
+    sem_data, data = _extrair_data(texto, hoje)
+    data_informada = sem_data != texto
+    texto, valor = _extrair_valor(sem_data)
     texto, forma = _extrair_forma(texto)
 
     descricao = limpar_descricao(descricao_aspas or texto)
-    return DespesaParcial(valor=valor, forma_pagamento=forma, data=data, descricao=descricao)
+    return DespesaParcial(
+        valor=valor,
+        forma_pagamento=forma,
+        data=data,
+        descricao=descricao,
+        data_informada=data_informada,
+    )
+
+
+def _mascarar(texto: str) -> str:
+    """Troca aspas e datas por espaços do mesmo tamanho (posições preservadas),
+    para que "05/09" ou números dentro da descrição não sejam lidos como valores."""
+    for regex in (_RE_ASPAS, *_RES_DATA):
+        texto = regex.sub(lambda m: " " * len(m.group(0)), texto)
+    return texto
+
+
+def _dividir(texto: str) -> list[str]:
+    """Divide a mensagem em trechos com um valor cada.
+
+    O corte entre dois valores acontece no último conector (", ", ";", " e ",
+    " mais ", " também ") entre eles. Sem conector ("2 pães por 10 reais"),
+    os valores ficam no mesmo trecho e a mensagem continua sendo um gasto só.
+    """
+    mascarado = _mascarar(texto)
+    valores = [m for m in _RE_VALOR.finditer(mascarado) if _converter_valor(m.group(1))]
+    trechos, inicio = [], 0
+    for atual, proximo in zip(valores, valores[1:], strict=False):
+        conectores = list(_RE_CONECTOR.finditer(mascarado, atual.end(), proximo.start()))
+        if not conectores:
+            continue
+        corte = conectores[-1]
+        trechos.append(texto[inicio : corte.start()])
+        inicio = corte.end()
+    trechos.append(texto[inicio:])
+    return trechos
+
+
+def _herdar(parciais: list[DespesaParcial]) -> None:
+    """Forma de pagamento e data informadas uma vez valem para os trechos sem elas,
+    desde que não haja valores conflitantes ("45 no mercado e 20 na padaria, no pix")."""
+    formas = {p.forma_pagamento for p in parciais if p.forma_pagamento}
+    if len(formas) == 1:
+        forma = formas.pop()
+        for p in parciais:
+            p.forma_pagamento = p.forma_pagamento or forma
+
+    datas = {p.data for p in parciais if p.data_informada and p.data is not None}
+    if len(datas) == 1:
+        data = datas.pop()
+        for p in parciais:
+            if not p.data_informada:
+                p.data, p.data_informada = data, True
+
+
+def parse_varios(texto: str, hoje: date) -> list[DespesaParcial]:
+    """Interpreta um ou mais gastos na mesma mensagem.
+
+    Ex: "Gastei 119 no mercado ontem, no débito e R$20 na padaria hoje, no voucher"
+    → [119 Débito ontem "Mercado", 20 Voucher hoje "Padaria"].
+    A lista pode passar de MAX_GASTOS; quem chama decide o que fazer.
+    """
+    parciais = [parse(trecho, hoje) for trecho in _dividir(texto)]
+    if len(parciais) > 1:
+        _herdar(parciais)
+    return parciais

@@ -40,6 +40,7 @@ log = structlog.get_logger()
 DICA_USO = (
     'Para registrar um gasto, use <code>/gasto 45 debito "mercado"</code> '
     "ou escreva algo como <i>Gastei 45 reais no mercado com débito</i>.\n"
+    "Dá para registrar vários de uma vez: <i>45 no mercado no pix e 20 na padaria</i>.\n"
     "Veja todos os comandos em /ajuda."
 )
 
@@ -47,22 +48,43 @@ DICA_USO = (
 # ---------------------------------------------------------------- fluxo principal
 
 
-async def _iniciar(
-    message: Message, state: FSMContext, session: AsyncSession, parcial: DespesaParcial
-) -> None:
-    # Sem texto, valor ou descrição no log: são dados financeiros do usuário
-    faltando = [c for c in ("valor", "forma_pagamento", "data", "descricao")
-                if getattr(parcial, c) is None]  # fmt: skip
-    log.debug("gasto_parseado", campos_faltando=faltando)
-    await state.set_data(
-        {
-            "valor": str(parcial.valor) if parcial.valor is not None else None,
-            "forma": parcial.forma_pagamento,
-            "data": parcial.data.isoformat() if parcial.data is not None else None,
-            "descricao": parcial.descricao,
-        }
+def _erro_gastos_demais() -> str:
+    return erro(
+        f"Registre até {parser_service.MAX_GASTOS} gastos por mensagem. "
+        "Divida em mais de uma mensagem."
     )
+
+
+def _serializar(parcial: DespesaParcial) -> dict[str, str | None]:
+    """Gasto parcial no formato guardado no FSM (JSON: valor em str, data ISO)."""
+    return {
+        "valor": str(parcial.valor) if parcial.valor is not None else None,
+        "forma": parcial.forma_pagamento,
+        "data": parcial.data.isoformat() if parcial.data is not None else None,
+        "descricao": parcial.descricao,
+    }
+
+
+async def _iniciar(
+    message: Message, state: FSMContext, session: AsyncSession, parciais: list[DespesaParcial]
+) -> None:
+    """Começa o registro de um ou mais gastos: o primeiro é o atual, os demais vão
+    para a `fila` e são processados em ordem conforme cada um é salvo."""
+    # Sem texto, valor ou descrição no log: são dados financeiros do usuário
+    faltando = [
+        [c for c in ("valor", "forma_pagamento", "data", "descricao") if getattr(p, c) is None]
+        for p in parciais
+    ]
+    log.debug("gasto_parseado", gastos=len(parciais), campos_faltando=faltando)
+    primeiro, *resto = [_serializar(p) for p in parciais]
+    await state.set_data({**primeiro, "fila": resto, "indice": 1, "total": len(parciais)})
     await _avancar(message, state, session, message.from_user.id)
+
+
+def _prefixo(dados: dict) -> str:
+    """Prefixo "Gasto 2 de 3 · " quando a mensagem tinha vários gastos."""
+    total = dados.get("total", 1)
+    return f"<b>Gasto {dados.get('indice', 1)} de {total}</b> · " if total > 1 else ""
 
 
 async def _avancar(
@@ -77,12 +99,15 @@ async def _avancar(
 
     if not dados.get("valor"):
         await state.set_state(RegistroGasto.aguardando_valor)
-        await message.answer("💰 Qual foi o valor do gasto? (ex: <code>45,90</code>)")
+        await message.answer(
+            _prefixo(dados) + "💰 Qual foi o valor do gasto? (ex: <code>45,90</code>)"
+        )
         return
     if not dados.get("data"):
         await state.set_state(RegistroGasto.aguardando_data)
         await message.answer(
-            alerta(
+            _prefixo(dados)
+            + alerta(
                 "Não entendi a data. Quando foi o gasto? (ex: <code>hoje</code>, "
                 "<code>ontem</code>, <code>05/09</code>)"
             )
@@ -91,20 +116,25 @@ async def _avancar(
     if not dados.get("forma"):
         await state.set_state(RegistroGasto.aguardando_forma)
         await message.answer(
-            f"💳 Como você pagou os {formatar_brl(Decimal(dados['valor']))}?",
+            _prefixo(dados) + f"💳 Como você pagou os {formatar_brl(Decimal(dados['valor']))}?",
             reply_markup=teclado_formas(),
         )
         return
     if not dados.get("descricao"):
         await state.set_state(RegistroGasto.aguardando_descricao)
-        await message.answer("📝 Com o que foi o gasto? (ex: <i>mercado</i>, <i>cinema</i>)")
+        await message.answer(
+            _prefixo(dados)
+            + f"📝 Com o que foi o gasto de {formatar_brl(Decimal(dados['valor']))}? "
+            "(ex: <i>mercado</i>, <i>cinema</i>)"
+        )
         return
 
     categoria = dados.get("categoria") or categorizar(dados["descricao"])
     if categoria is None:
         await state.set_state(RegistroGasto.aguardando_categoria)
         await message.answer(
-            f"🏷️ Em qual categoria se encaixa <b>{escape(dados['descricao'])}</b>?",
+            _prefixo(dados)
+            + f"🏷️ Em qual categoria se encaixa <b>{escape(dados['descricao'])}</b>?",
             reply_markup=teclado_categorias(),
         )
         return
@@ -117,9 +147,20 @@ async def _avancar(
         descricao=dados["descricao"],
         categoria=categoria,
     )
-    await state.clear()
     log.info("despesa_registrada", despesa_id=despesa.id, user_id=despesa.user_id)
-    await message.answer(formatar_confirmacao(despesa), reply_markup=teclado_corrigir(despesa.id))
+    total, indice = dados.get("total", 1), dados.get("indice", 1)
+    titulo = f"✅ Gasto {indice} de {total} registrado!" if total > 1 else "✅ Gasto registrado!"
+    await message.answer(
+        formatar_confirmacao(despesa, titulo=titulo), reply_markup=teclado_corrigir(despesa.id)
+    )
+
+    fila = dados.get("fila") or []
+    if not fila:
+        await state.clear()
+        return
+    proximo, *resto = fila
+    await state.set_data({**proximo, "fila": resto, "indice": indice + 1, "total": total})
+    await _avancar(message, state, session, user_id)
 
 
 # ---------------------------------------------------------------- entradas
@@ -137,8 +178,12 @@ async def cancelar(message: Message, state: FSMContext) -> None:
     if await state.get_state() is None:
         await message.answer("ℹ️ Não há nenhum registro em andamento.")
         return
+    pendentes = 1 + len((await state.get_data()).get("fila") or [])
     await state.clear()
-    await message.answer("🚫 Registro cancelado.")
+    if pendentes > 1:
+        await message.answer(f"🚫 {pendentes} registros cancelados.")
+    else:
+        await message.answer("🚫 Registro cancelado.")
 
 
 @router.message(Command("gasto"))
@@ -149,8 +194,11 @@ async def cmd_gasto(
     session: AsyncSession,
     settings: Settings,
 ) -> None:
-    parcial = parser_service.parse(command.args or "", hoje(settings.timezone))
-    await _iniciar(message, state, session, parcial)
+    parciais = parser_service.parse_varios(command.args or "", hoje(settings.timezone))
+    if len(parciais) > parser_service.MAX_GASTOS:
+        await message.answer(_erro_gastos_demais())
+        return
+    await _iniciar(message, state, session, parciais)
 
 
 @router.message(RegistroGasto.aguardando_valor, F.text, ~F.text.startswith("/"))
@@ -294,11 +342,14 @@ async def comando_desconhecido(message: Message) -> None:
 async def texto_livre(
     message: Message, state: FSMContext, session: AsyncSession, settings: Settings
 ) -> None:
-    parcial = parser_service.parse(message.text, hoje(settings.timezone))
-    if parcial.valor is None:
+    parciais = parser_service.parse_varios(message.text, hoje(settings.timezone))
+    if all(p.valor is None for p in parciais):
         await message.answer(alerta("Não encontrei um valor na sua mensagem.") + "\n" + DICA_USO)
         return
-    await _iniciar(message, state, session, parcial)
+    if len(parciais) > parser_service.MAX_GASTOS:
+        await message.answer(_erro_gastos_demais())
+        return
+    await _iniciar(message, state, session, parciais)
 
 
 @router.message(F.text.startswith("/"))

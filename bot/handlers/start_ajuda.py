@@ -20,6 +20,7 @@ AJUDA = (
     "<b>Registrar um gasto</b>\n"
     '• <code>/gasto 45 debito "mercado"</code>\n'
     "• Ou só escreva: <i>Gastei 45 reais no mercado com débito hoje</i>\n"
+    "• Vários de uma vez: <i>119 no mercado no débito e 20 na padaria no voucher</i>\n"
     "• Se faltar algo, eu pergunto 😉\n\n"
     "<b>Relatórios</b>\n"
     "📅 /diario — gastos de hoje\n"

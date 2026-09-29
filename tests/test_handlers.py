@@ -216,3 +216,58 @@ async def test_estado_da_conversa_termina_limpo(dp, bot, session):
     assert await session.scalar(select(func.count()).select_from(FsmEstado)) == 1
     await mensagem(dp, bot, "credito")
     assert await session.scalar(select(func.count()).select_from(FsmEstado)) == 0
+
+
+# ---------------------------------------------------------------- vários gastos
+
+
+async def test_dois_gastos_completos_numa_mensagem(dp, bot, telegram, session):
+    await mensagem(
+        dp,
+        bot,
+        "Gastei 119 reais no mercado ontem, no débito e R$20 na padaria hoje, usando o voucher",
+    )
+    primeiro, segundo = await despesas(session)
+    assert (primeiro.valor, primeiro.forma_pagamento, primeiro.categoria) == (
+        Decimal("119.00"),
+        "Débito",
+        "Comida",
+    )
+    assert (segundo.valor, segundo.forma_pagamento, segundo.descricao) == (
+        Decimal("20.00"),
+        "Voucher",
+        "Padaria",
+    )
+    assert primeiro.data < segundo.data  # ontem / hoje
+    confirmacoes = [t for t in telegram.textos() if "registrado" in t]
+    assert len(confirmacoes) == 2
+    assert "Gasto 1 de 2" in confirmacoes[0] and "Gasto 2 de 2" in confirmacoes[1]
+
+
+async def test_segundo_gasto_incompleto_pergunta_so_por_ele(dp, bot, telegram, session):
+    await mensagem(dp, bot, "45 pix mercado e 20 padaria, 10 dinheiro feira")
+    # 1º salvo; o 2º não tem forma de pagamento (há formas conflitantes, sem herança)
+    assert len(await despesas(session)) == 1
+    assert "Gasto 2 de 3" in telegram.textos()[-1]
+    assert "Como você pagou" in telegram.textos()[-1]
+
+    await clique(dp, bot, "forma:Voucher")
+    salvos = await despesas(session)
+    assert [(d.descricao, d.forma_pagamento) for d in salvos] == [
+        ("Mercado", "Pix"),
+        ("Padaria", "Voucher"),
+        ("Feira", "Dinheiro"),
+    ]
+
+
+async def test_cancelar_descarta_a_fila(dp, bot, telegram, session):
+    await mensagem(dp, bot, "45 mercado, 20 padaria e 10 feira")  # nenhum tem forma
+    await mensagem(dp, bot, "/cancelar")
+    assert telegram.textos()[-1] == "🚫 3 registros cancelados."
+    assert await despesas(session) == []
+
+
+async def test_gastos_demais_numa_mensagem(dp, bot, telegram, session):
+    await mensagem(dp, bot, ", ".join(f"{v} pix mercado" for v in range(1, 8)))
+    assert "até 5 gastos" in telegram.textos()[-1]
+    assert await despesas(session) == []

@@ -10,6 +10,7 @@ from bot.services.parser_service import (
     parse_data,
     parse_forma_pagamento,
     parse_valor,
+    parse_varios,
 )
 
 HOJE = date(2026, 9, 26)  # sábado
@@ -169,3 +170,81 @@ def test_cartao_voucher_nao_vira_credito_nem_sobra_na_descricao():
 def test_palavra_com_va_no_meio_nao_vira_voucher():
     assert parse_forma_pagamento("vaso") is None
     assert parse_forma_pagamento("uva") is None
+
+
+# ---------------------------------------------------------------- vários gastos
+
+
+def test_exemplo_da_sprint_vira_dois_gastos():
+    gastos = parse_varios(
+        "Gastei 119 reais no mercado ontem, no débito e R$20 na padaria hoje, usando o voucher",
+        HOJE,
+    )
+    assert [(g.valor, g.forma_pagamento, g.data, g.descricao) for g in gastos] == [
+        (Decimal("119.00"), "Débito", date(2026, 9, 25), "Mercado"),
+        (Decimal("20.00"), "Voucher", HOJE, "Padaria"),
+    ]
+
+
+def test_forma_informada_uma_vez_vale_para_todos():
+    gastos = parse_varios("45 no mercado e 20 na padaria, no pix", HOJE)
+    assert [g.forma_pagamento for g in gastos] == ["Pix", "Pix"]
+    assert [g.descricao for g in gastos] == ["Mercado", "Padaria"]
+
+
+def test_data_informada_uma_vez_vale_para_todos():
+    gastos = parse_varios("ontem 45 pix mercado e 20 dinheiro padaria", HOJE)
+    assert [g.data for g in gastos] == [date(2026, 9, 25)] * 2
+
+
+def test_formas_diferentes_nao_sao_herdadas():
+    gastos = parse_varios("45 pix mercado, 20 padaria e 10 dinheiro feira", HOJE)
+    assert [g.forma_pagamento for g in gastos] == ["Pix", None, "Dinheiro"]
+
+
+def test_datas_diferentes_nao_sao_herdadas():
+    gastos = parse_varios("45 pix mercado ontem, 20 pix padaria e 10 pix feira hoje", HOJE)
+    assert [g.data for g in gastos] == [date(2026, 9, 25), HOJE, HOJE]
+
+
+def test_separadores_variados():
+    gastos = parse_varios("45 pix mercado; 30 dinheiro feira mais 10 va lanche", HOJE)
+    assert [g.valor for g in gastos] == [Decimal("45.00"), Decimal("30.00"), Decimal("10.00")]
+    assert [g.forma_pagamento for g in gastos] == ["Pix", "Dinheiro", "Voucher"]
+
+
+def test_numeros_sem_conector_sao_um_gasto_so():
+    [gasto] = parse_varios("comprei 2 pães por 10 reais", HOJE)
+    assert gasto.valor == Decimal("10.00")
+    assert gasto.descricao == "2 pães"
+
+
+def test_valor_com_virgula_decimal_nao_e_dividido():
+    [gasto] = parse_varios("45,90 pix ifood", HOJE)
+    assert gasto.valor == Decimal("45.90")
+
+
+def test_datas_nao_sao_valores_na_divisao():
+    gastos = parse_varios("05/09 30 pix lanche e 12,50 cafe", HOJE)
+    assert [g.valor for g in gastos] == [Decimal("30.00"), Decimal("12.50")]
+    assert [g.data for g in gastos] == [date(2026, 9, 5)] * 2
+
+
+def test_conector_dentro_das_aspas_nao_divide():
+    [gasto] = parse_varios('45 debito "mercado e padaria"', HOJE)
+    assert gasto.descricao == "Mercado e padaria"
+
+
+def test_um_gasto_continua_igual_ao_parse():
+    [gasto] = parse_varios("Gastei 45 reais no mercado com débito hoje", HOJE)
+    assert gasto == parse("Gastei 45 reais no mercado com débito hoje", HOJE)
+
+
+def test_sem_valor_devolve_um_parcial_sem_valor():
+    [gasto] = parse_varios("mercado", HOJE)
+    assert gasto.valor is None
+
+
+def test_parse_marca_se_a_data_foi_informada():
+    assert parse("45 pix mercado", HOJE).data_informada is False
+    assert parse("45 pix mercado ontem", HOJE).data_informada is True
